@@ -1,0 +1,77 @@
+### Req0 GET a shelf
+GET http://localhost:8080/api/shelf
+Authorization: Basic user user
+
+### Req1 CREATE a shelf
+POST http://localhost:8080/api/shelf/Shelves
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+    "name": "b",
+    "capacity": 12
+}
+
+### Req1.1 GET shelves
+GET http://localhost:8080/api/shelf/Shelves
+Authorization: Basic user user
+
+
+### Req2 Update the shelf, change capacity and name
+PATCH http://localhost:8080/api/shelf/Shelves(24e48788-b3fa-47b5-8138-a747c98b2207)
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+  "name": "b was just updated again from 24 to 48 using PATCH",
+  "capacity": 24
+}
+
+### Req3 Create a shelf with books immediately (deep insert)
+PUT http://localhost:8080/api/shelf/Shelves(24e48788-b3fa-47b5-8138-a747c98b2207)
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+  "name": "b was just replace from b to boyka using PUT (capacity not specified, should be defaulted)"
+}
+
+### Req3 Create a shelf with books immediately (deep insert)
+POST http://localhost:8080/api/shelf/Shelves
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+    "name": "a shelf using deep insert",
+    "capacity": 10,
+    "bookAssignments": [
+        { "book_ID": "4a519e61-3c3a-4bd9-ab12-d7e0c5329933" }
+    ]
+}
+
+### Req3.1 GET shelves expanded
+GET http://localhost:8080/api/shelf/Shelves?$expand=bookAssignments
+Authorization: Basic user user
+
+### Req4 For an existing shelf, add a new books, there are multiple ways, try both (insert through association and direct insert)
+POST http://localhost:8080/api/shelf/Shelves(c02be776-95b9-49a7-9b81-b6f245251167)/bookAssignments
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+    "book_ID": "51061ce3-ddde-4d70-a2dc-6314afbcc73e"
+}
+
+### b)
+POST http://localhost:8080/api/shelf/ShelfBooks
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+  "shelfid": "id",
+  "bookid": "bookid"
+}
+
+###Req5 Remove a book from a shelf
+#DELETE ..
+

@@ -9,4 +9,6 @@ service ShelfService {
   @readonly
   entity Books      as projection on my.Books;
 
+  action AddBookToShelf(shelfid: String,
+                        bookid: String);
 }

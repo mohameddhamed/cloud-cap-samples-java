@@ -6,6 +6,13 @@ using my.bookshop.Books from './books';
 entity Shelves: cuid, managed {
     name        : localized String(250);
     capacity : Integer default 10 not null; // default 10 and > 0
+
+//     ShelfBooks becomes contained
+//     Contained entities cannot exist independently
+//     Therefore:
+//       ❌ no /ShelfBooks despite projection in service
+//       ✅ only /Shelves(...)/bookAssignments
+//     CAP enforces this even if you explicitly project the entity.
     bookAssignments       : Composition of many ShelfBooks on bookAssignments.shelf = $self;
 }
 
