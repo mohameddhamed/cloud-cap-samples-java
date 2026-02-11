@@ -63,15 +63,17 @@ Content-Type: application/json
 }
 
 ### b)
-POST http://localhost:8080/api/shelf/ShelfBooks
+POST http://localhost:8080/api/shelf/AddBookToShelf
 Authorization: Basic user user
 Content-Type: application/json
 
 {
-  "shelfid": "id",
-  "bookid": "bookid"
+  "shelfid": "a6734db7-2aed-47dc-af29-665b907d2483",
+  "bookid": "51061ce3-ddde-4d70-a2dc-6314afbcc73e"
 }
 
-###Req5 Remove a book from a shelf
-#DELETE ..
+### Req5 Remove a book from a shelf
+DELETE http://localhost:8080/api/shelf/Shelves(a6734db7-2aed-47dc-af29-665b907d2483)/bookAssignments(634d96c5-5d3d-4032-9428-a42c0444d244)
+Authorization: Basic user user
+Content-Type: application/json
 
