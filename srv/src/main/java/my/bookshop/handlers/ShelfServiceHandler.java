@@ -2,6 +2,8 @@ package my.bookshop.handlers;
 
 import cds.gen.shelfservice.AddBookToShelfContext;
 import cds.gen.shelfservice.ShelfService_;
+import cds.gen.shelfservice.Shelves;
+import cds.gen.shelfservice.Shelves_;
 import com.sap.cds.Result;
 import com.sap.cds.ql.Insert;
 import com.sap.cds.ql.Select;
@@ -9,7 +11,9 @@ import com.sap.cds.ql.cqn.CqnInsert;
 import com.sap.cds.ql.cqn.CqnSelect;
 import com.sap.cds.services.ErrorStatuses;
 import com.sap.cds.services.ServiceException;
+import com.sap.cds.services.cds.CqnService;
 import com.sap.cds.services.handler.EventHandler;
+import com.sap.cds.services.handler.annotations.Before;
 import com.sap.cds.services.handler.annotations.On;
 import com.sap.cds.services.handler.annotations.ServiceName;
 import com.sap.cds.services.persistence.PersistenceService;
@@ -23,6 +27,33 @@ import org.springframework.stereotype.Component;
 public class ShelfServiceHandler implements EventHandler {
 
   @Autowired PersistenceService persistenceService;
+
+  @Before(
+      event = {CqnService.EVENT_CREATE, CqnService.EVENT_UPDATE},
+      entity = Shelves_.CDS_NAME)
+  public void beforeCreateShelf(Shelves shelf) {
+    //    1.	Name is mandatory
+    //    2.	Capacity is also mandatory, default should be 10 and cannot be negative.
+    if (shelf.getName() == null || shelf.getName().isEmpty()) {
+      throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf name is mandatory.");
+    }
+
+    CqnSelect query =
+        Select.from(ShelfService_.SHELVES).where(o -> o.get("name").eq(shelf.getName()));
+
+    Result result = persistenceService.run(query);
+
+    if (result.first().isPresent()) {
+      throw new ServiceException(
+          ErrorStatuses.CONFLICT, "Shelf with name " + shelf.getName() + " already exists.");
+    }
+
+    if (shelf.getCapacity() == null) {
+      shelf.setCapacity(10); // Set default capacity
+    } else if (shelf.getCapacity() < 0) {
+      throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf capacity cannot be negative.");
+    }
+  }
 
   @On(event = AddBookToShelfContext.CDS_NAME)
   public void AddBookToShelf(AddBookToShelfContext eventContext) {
