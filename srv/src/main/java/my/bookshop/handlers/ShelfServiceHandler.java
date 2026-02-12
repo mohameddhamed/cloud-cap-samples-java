@@ -1,10 +1,8 @@
 package my.bookshop.handlers;
 
-import cds.gen.shelfservice.AddBookToShelfContext;
-import cds.gen.shelfservice.ShelfService_;
-import cds.gen.shelfservice.Shelves;
-import cds.gen.shelfservice.Shelves_;
+import cds.gen.shelfservice.*;
 import com.sap.cds.Result;
+import com.sap.cds.ql.CQL;
 import com.sap.cds.ql.Insert;
 import com.sap.cds.ql.Select;
 import com.sap.cds.ql.cqn.CqnInsert;
@@ -18,6 +16,7 @@ import com.sap.cds.services.handler.annotations.On;
 import com.sap.cds.services.handler.annotations.ServiceName;
 import com.sap.cds.services.persistence.PersistenceService;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -53,6 +52,67 @@ public class ShelfServiceHandler implements EventHandler {
     } else if (shelf.getCapacity() < 0) {
       throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf capacity cannot be negative.");
     }
+
+    // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not exceeded
+    List<ShelfBooks> bookAssignments = shelf.getBookAssignments();
+    if (bookAssignments != null && bookAssignments.size() > shelf.getCapacity()) {
+      throw new ServiceException(
+          ErrorStatuses.BAD_REQUEST,
+          "Number of books assigned to the shelf cannot exceed its capacity.");
+    }
+
+  }
+//  2.	Books
+//1.	There should be no more books on a shelf than the capacity
+//1.	If you create a shelf w/ a deep insert (see below), don’t allow adding in more books than capacity
+//2.	If you just add new books, stop addition if you reach capacity.
+//3.	If you update the capacity, ensure that there the number of books on the shelf still fits. (There are 5 books assigned, you cannot set capacity from 5 to 3 for example).
+//
+  @Before(event = CqnService.EVENT_CREATE, entity = ShelfBooks_.CDS_NAME)
+  public void beforeCreateShelfBook(ShelfBooks shelfBook) {
+
+    // Checking if book even exists
+     CqnSelect bookQuery = Select.from(ShelfService_.BOOKS)
+            .where(o -> o.get("ID").eq(shelfBook.getBookId()));
+     Result bookResult = persistenceService.run(bookQuery);
+     if (bookResult.first().isEmpty()) {
+       throw new ServiceException(
+              ErrorStatuses.NOT_FOUND,
+              "Book with ID " + shelfBook.getBookId() + " does not exist."
+       );
+     }
+
+     // I need to query the ShelfBooks to see how many rows have shelfId = shelfBook.getShelfId()
+    // That number is the current amount of books on the shelf. I also need to query the Shelves to get the capacity of the shelf.
+    // I can't use the association because it's loaded lazily
+
+    // Getting the count of bookAssignments with the given shelfId
+     CqnSelect shelfBookQuery = Select.from(ShelfService_.SHELF_BOOKS)
+             .columns(CQL.count().as("total"))  // The magic part
+             .where(sb -> sb.get("shelf_ID").eq(shelfBook.getShelfId()));
+     Result shelfBookResult = persistenceService.run(shelfBookQuery);
+     long currentBookAmount = (long) shelfBookResult.single().get("total");
+
+     // Getting the capacity of the shelf
+     CqnSelect shelfQuery = Select.from(ShelfService_.SHELVES) .where(o -> o.get("ID").eq(shelfBook.getShelfId()));
+     Result shelfResult = persistenceService.run(shelfQuery);
+     if  (shelfResult.first().isEmpty()) {
+       // This means that we are in a deep insert scenario where the shelf is being created at the same time as the book assignment
+       // so the capacity validation is handled by the parent
+         return;
+     }
+     // shelf Found -> this is not a deep insert, rather a POST /Shelves(ID)/bookAssignments
+    // so the capacity validation needs to be handled here
+    Shelves shelf = shelfResult.single(Shelves.class);
+    int maximumBookAmount = shelf.getCapacity();
+
+    // This works because each bookAssignment counts for 1 book
+    if (maximumBookAmount < currentBookAmount + 1) {
+      throw new ServiceException(
+          ErrorStatuses.BAD_REQUEST,
+          "Cannot add book to shelf. Shelf capacity of " + maximumBookAmount + " would be exceeded.");
+    }
+
   }
 
   @On(event = AddBookToShelfContext.CDS_NAME)

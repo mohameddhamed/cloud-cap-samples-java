@@ -27,7 +27,7 @@ Content-Type: application/json
   "capacity": 24
 }
 
-### Req3 Create a shelf with books immediately (deep insert)
+### Req2.5 Replace shelf properties
 PUT http://localhost:8080/api/shelf/Shelves(24e48788-b3fa-47b5-8138-a747c98b2207)
 Authorization: Basic user user
 Content-Type: application/json
