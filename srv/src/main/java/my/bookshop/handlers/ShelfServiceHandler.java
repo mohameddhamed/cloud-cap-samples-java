@@ -5,10 +5,12 @@ import com.sap.cds.Result;
 import com.sap.cds.ql.CQL;
 import com.sap.cds.ql.Insert;
 import com.sap.cds.ql.Select;
+import com.sap.cds.ql.cqn.CqnComparisonPredicate;
 import com.sap.cds.ql.cqn.CqnInsert;
 import com.sap.cds.ql.cqn.CqnSelect;
 import com.sap.cds.services.ErrorStatuses;
 import com.sap.cds.services.ServiceException;
+import com.sap.cds.services.cds.CdsCreateEventContext;
 import com.sap.cds.services.cds.CqnService;
 import com.sap.cds.services.handler.EventHandler;
 import com.sap.cds.services.handler.annotations.Before;
@@ -19,6 +21,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -26,6 +30,15 @@ import org.springframework.stereotype.Component;
 public class ShelfServiceHandler implements EventHandler {
 
   @Autowired PersistenceService persistenceService;
+
+  @Autowired
+  @Lazy
+  @Qualifier(ShelfService_.CDS_NAME)
+  CqnService shelfService;
+
+  //  @Autowired
+  //  ServiceCatalog serviceCatalog;
+  //  private CqnService shelfService;
 
   @Before(
       event = {CqnService.EVENT_CREATE, CqnService.EVENT_UPDATE},
@@ -53,66 +66,113 @@ public class ShelfServiceHandler implements EventHandler {
       throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf capacity cannot be negative.");
     }
 
-    // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not exceeded
+    // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not
+    // exceeded
     List<ShelfBooks> bookAssignments = shelf.getBookAssignments();
     if (bookAssignments != null && bookAssignments.size() > shelf.getCapacity()) {
       throw new ServiceException(
           ErrorStatuses.BAD_REQUEST,
           "Number of books assigned to the shelf cannot exceed its capacity.");
     }
-
   }
-//  2.	Books
-//1.	There should be no more books on a shelf than the capacity
-//1.	If you create a shelf w/ a deep insert (see below), don’t allow adding in more books than capacity
-//2.	If you just add new books, stop addition if you reach capacity.
-//3.	If you update the capacity, ensure that there the number of books on the shelf still fits. (There are 5 books assigned, you cannot set capacity from 5 to 3 for example).
-//
+
+  //  2.	Books
+  // 1.	There should be no more books on a shelf than the capacity
+  // 1.	If you create a shelf w/ a deep insert (see below), don’t allow adding in more books than
+  // capacity
+  // 2.	If you just add new books, stop addition if you reach capacity.
+  // 3.	If you update the capacity, ensure that there the number of books on the shelf still fits.
+  // (There are 5 books assigned, you cannot set capacity from 5 to 3 for example).
+  //
   @Before(event = CqnService.EVENT_CREATE, entity = ShelfBooks_.CDS_NAME)
-  public void beforeCreateShelfBook(ShelfBooks shelfBook) {
+  public void beforeCreateShelfBook(ShelfBooks shelfBook, CdsCreateEventContext context) {
+
+    System.out.println(">>> beforeCreateShelfBook FIRED");
+    System.out.println(">>> entries: " + context.getCqn().entries());
+    var segments = context.getCqn().ref().segments();
+    var filter = segments.get(0).filter().orElseThrow();
+    //    String newShelfId = ((CqnComparisonPredicate) filter).asLiteral().value().toString();
+
+    System.out.println(">>> segments: " + context.getCqn().ref().segments().get(0));
+    System.out.println(">>> filter: " + filter);
+    System.out.println(">>> filter: " + filter.getClass().getName());
+    CqnComparisonPredicate comparison = (CqnComparisonPredicate) filter;
+    System.out.println(">>> comparison methods test:");
+    System.out.println(">>> right: " + comparison.right());
+    String shelfId = comparison.right().asLiteral().value().toString();
+    System.out.println(">>> final shelfId: " + shelfId);
+    //    System.out.println(">>> newShelfId: " + newShelfId);
+    System.out.println(
+        ">>> shelfId: " + context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID));
+    System.out.println(">>> bookId: " + shelfBook.getBookId());
 
     // Checking if book even exists
-     CqnSelect bookQuery = Select.from(ShelfService_.BOOKS)
-            .where(o -> o.get("ID").eq(shelfBook.getBookId()));
-     Result bookResult = persistenceService.run(bookQuery);
-     if (bookResult.first().isEmpty()) {
-       throw new ServiceException(
-              ErrorStatuses.NOT_FOUND,
-              "Book with ID " + shelfBook.getBookId() + " does not exist."
-       );
-     }
+    CqnSelect bookQuery =
+        Select.from(ShelfService_.BOOKS).where(o -> o.get("ID").eq(shelfBook.getBookId()));
+    Result bookResult = persistenceService.run(bookQuery);
+    if (bookResult.first().isEmpty()) {
+      throw new ServiceException(
+          ErrorStatuses.NOT_FOUND, "Book with ID " + shelfBook.getBookId() + " does not exist.");
+    }
 
-     // I need to query the ShelfBooks to see how many rows have shelfId = shelfBook.getShelfId()
-    // That number is the current amount of books on the shelf. I also need to query the Shelves to get the capacity of the shelf.
+    // Checking if book and shelf association already exists to prevent duplicates
+    CqnSelect shelfBookAssociationQuery =
+        Select.from(ShelfService_.SHELF_BOOKS)
+            .where(
+                o ->
+                    o.get("shelf_ID")
+                        .eq(shelfBook.getShelfId())
+                        .and(o.get("book_ID").eq(shelfBook.getBookId())));
+    Result shelfBookAssociationResult = persistenceService.run(shelfBookAssociationQuery);
+    if (shelfBookAssociationResult.first().isPresent()) {
+      throw new ServiceException(
+          ErrorStatuses.CONFLICT,
+          "Book with ID "
+              + shelfBook.getBookId()
+              + " is already assigned to Shelf with ID "
+              + shelfBook.getShelfId()
+              + ".");
+    }
+
+    // I need to query the ShelfBooks to see how many rows have shelfId = shelfBook.getShelfId()
+    // That number is the current amount of books on the shelf. I also need to query the Shelves to
+    // get the capacity of the shelf.
     // I can't use the association because it's loaded lazily
 
     // Getting the count of bookAssignments with the given shelfId
-     CqnSelect shelfBookQuery = Select.from(ShelfService_.SHELF_BOOKS)
-             .columns(CQL.count().as("total"))  // The magic part
-             .where(sb -> sb.get("shelf_ID").eq(shelfBook.getShelfId()));
-     Result shelfBookResult = persistenceService.run(shelfBookQuery);
-     long currentBookAmount = (long) shelfBookResult.single().get("total");
+    CqnSelect shelfBookQuery =
+        Select.from(ShelfService_.SHELF_BOOKS)
+            .columns(CQL.count().as("total")) // The magic part
+            .where(sb -> sb.get("shelf_ID").eq(shelfBook.getShelfId()));
+    Result shelfBookResult = persistenceService.run(shelfBookQuery);
+    long currentBookAmount = (long) shelfBookResult.single().get("total");
 
-     // Getting the capacity of the shelf
-     CqnSelect shelfQuery = Select.from(ShelfService_.SHELVES) .where(o -> o.get("ID").eq(shelfBook.getShelfId()));
-     Result shelfResult = persistenceService.run(shelfQuery);
-     if  (shelfResult.first().isEmpty()) {
-       // This means that we are in a deep insert scenario where the shelf is being created at the same time as the book assignment
-       // so the capacity validation is handled by the parent
-         return;
-     }
-     // shelf Found -> this is not a deep insert, rather a POST /Shelves(ID)/bookAssignments
+    // Getting the capacity of the shelf
+    CqnSelect shelfQuery =
+        Select.from(ShelfService_.SHELVES).where(o -> o.get("ID").eq(shelfBook.getShelfId()));
+    Result shelfResult = persistenceService.run(shelfQuery);
+    if (shelfResult.first().isEmpty()) {
+      // This means that we are in a deep insert scenario where the shelf is being created at the
+      // same time as the book assignment
+      // so the capacity validation is handled by the parent
+      return;
+    }
+    // shelf Found -> this is not a deep insert, rather a POST /Shelves(ID)/bookAssignments
     // so the capacity validation needs to be handled here
     Shelves shelf = shelfResult.single(Shelves.class);
     int maximumBookAmount = shelf.getCapacity();
+
+    System.out.println(">>> maximumBookAmount: " + maximumBookAmount);
+    System.out.println(">>> maximumBookAmount: " + currentBookAmount);
 
     // This works because each bookAssignment counts for 1 book
     if (maximumBookAmount < currentBookAmount + 1) {
       throw new ServiceException(
           ErrorStatuses.BAD_REQUEST,
-          "Cannot add book to shelf. Shelf capacity of " + maximumBookAmount + " would be exceeded.");
+          "Cannot add book to shelf. Shelf capacity of "
+              + maximumBookAmount
+              + " would be exceeded.");
     }
-
   }
 
   @On(event = AddBookToShelfContext.CDS_NAME)
@@ -152,8 +212,9 @@ public class ShelfServiceHandler implements EventHandler {
         bookAssignment.put("book_ID", bookid);
 
         CqnInsert insert = Insert.into(ShelfService_.SHELF_BOOKS).entry(bookAssignment);
+        shelfService.run(insert);
 
-        persistenceService.run(insert);
+        //        persistenceService.run(insert);
       } else {
         // Book does not exist
         throw new ServiceException(

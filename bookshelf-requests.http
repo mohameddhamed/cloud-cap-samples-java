@@ -18,12 +18,12 @@ Authorization: Basic user user
 
 
 ### Req2 Update the shelf, change capacity and name
-PATCH http://localhost:8080/api/shelf/Shelves(24e48788-b3fa-47b5-8138-a747c98b2207)
+PATCH http://localhost:8080/api/shelf/Shelves(9228a114-c919-41a7-a682-c38c8d3e07ea)
 Authorization: Basic user user
 Content-Type: application/json
 
 {
-  "name": "b was just updated again from 24 to 48 using PATCH",
+  "name": "b was just updated again from 10 to 24 using PATCH",
   "capacity": 24
 }
 
@@ -68,12 +68,33 @@ Authorization: Basic user user
 Content-Type: application/json
 
 {
-  "shelfid": "a6734db7-2aed-47dc-af29-665b907d2483",
-  "bookid": "51061ce3-ddde-4d70-a2dc-6314afbcc73e"
+  "shelfid": "ad74b83d-3c73-47e1-a3e1-a99da9b0da99",
+  "bookid": "f846b0b9-01d4-4f6d-82a4-d79204f62278"
 }
 
 ### Req5 Remove a book from a shelf
-DELETE http://localhost:8080/api/shelf/Shelves(a6734db7-2aed-47dc-af29-665b907d2483)/bookAssignments(634d96c5-5d3d-4032-9428-a42c0444d244)
+DELETE http://localhost:8080/api/shelf/Shelves(9228a114-c919-41a7-a682-c38c8d3e07ea)/bookAssignments(634d96c5-5d3d-4032-9428-a42c0444d244)
 Authorization: Basic user user
 Content-Type: application/json
+
+### Req6 Add 3 books to a shelf, but the shelf capacity is 2, expect failure, this is testing the event handling and transaction rollback
+POST http://localhost:8080/api/shelf/Shelves
+Authorization: Basic user user
+Content-Type: application/json
+
+{
+  "name": "a shelf, has 3 books, using deep insert that's event handled",
+  "capacity": 2,
+  "bookAssignments": [
+    {
+      "book_ID": "51061ce3-ddde-4d70-a2dc-6314afbcc73e"
+    },
+    {
+      "book_ID": "4a519e61-3c3a-4bd9-ab12-d7e0c5329933"
+    },
+    {
+      "book_ID": "aebdfc8a-0dfa-4468-bd36-48aabd65e663"
+    }
+  ]
+}
 
