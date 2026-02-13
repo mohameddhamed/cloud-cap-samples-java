@@ -89,22 +89,30 @@ public class ShelfServiceHandler implements EventHandler {
 
     System.out.println(">>> beforeCreateShelfBook FIRED");
     System.out.println(">>> entries: " + context.getCqn().entries());
-    var segments = context.getCqn().ref().segments();
-    var filter = segments.get(0).filter().orElseThrow();
-    //    String newShelfId = ((CqnComparisonPredicate) filter).asLiteral().value().toString();
 
-    System.out.println(">>> segments: " + context.getCqn().ref().segments().get(0));
+    var segments = context.getCqn().ref().segments();
+    var filter = segments.isEmpty() ? null : segments.get(0).filter().orElse(null);
+
+    System.out.println(">>> segments: " + (segments.isEmpty() ? "empty" : segments.get(0)));
     System.out.println(">>> filter: " + filter);
-    System.out.println(">>> filter: " + filter.getClass().getName());
-    CqnComparisonPredicate comparison = (CqnComparisonPredicate) filter;
-    System.out.println(">>> comparison methods test:");
-    System.out.println(">>> right: " + comparison.right());
-    String shelfId = comparison.right().asLiteral().value().toString();
-    System.out.println(">>> final shelfId: " + shelfId);
-    //    System.out.println(">>> newShelfId: " + newShelfId);
     System.out.println(
-        ">>> shelfId: " + context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID));
+        ">>> filter class: " + (filter != null ? filter.getClass().getName() : "null"));
+
+    String tempShelfId = null;
+
+    if (filter instanceof CqnComparisonPredicate comparison) {
+      tempShelfId = comparison.right().asLiteral().value().toString();
+      System.out.println(">>> shelfId from filter (/bookAssignment): " + tempShelfId);
+    }
+
+    if (tempShelfId == null || tempShelfId.isEmpty()) {
+      tempShelfId = context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID).toString();
+      System.out.println(">>> shelfId from action: " + tempShelfId);
+    }
+
+    final String shelfId = tempShelfId;
     System.out.println(">>> bookId: " + shelfBook.getBookId());
+    System.out.println(">>> final shelfId: " + shelfId);
 
     // Checking if book even exists
     CqnSelect bookQuery =
@@ -119,10 +127,7 @@ public class ShelfServiceHandler implements EventHandler {
     CqnSelect shelfBookAssociationQuery =
         Select.from(ShelfService_.SHELF_BOOKS)
             .where(
-                o ->
-                    o.get("shelf_ID")
-                        .eq(shelfBook.getShelfId())
-                        .and(o.get("book_ID").eq(shelfBook.getBookId())));
+                o -> o.get("shelf_ID").eq(shelfId).and(o.get("book_ID").eq(shelfBook.getBookId())));
     Result shelfBookAssociationResult = persistenceService.run(shelfBookAssociationQuery);
     if (shelfBookAssociationResult.first().isPresent()) {
       throw new ServiceException(
@@ -130,11 +135,11 @@ public class ShelfServiceHandler implements EventHandler {
           "Book with ID "
               + shelfBook.getBookId()
               + " is already assigned to Shelf with ID "
-              + shelfBook.getShelfId()
+              + tempShelfId
               + ".");
     }
 
-    // I need to query the ShelfBooks to see how many rows have shelfId = shelfBook.getShelfId()
+    // I need to query the ShelfBooks to see how many rows have shelfId = shelfId
     // That number is the current amount of books on the shelf. I also need to query the Shelves to
     // get the capacity of the shelf.
     // I can't use the association because it's loaded lazily
@@ -143,18 +148,21 @@ public class ShelfServiceHandler implements EventHandler {
     CqnSelect shelfBookQuery =
         Select.from(ShelfService_.SHELF_BOOKS)
             .columns(CQL.count().as("total")) // The magic part
-            .where(sb -> sb.get("shelf_ID").eq(shelfBook.getShelfId()));
+            .where(sb -> sb.get("shelf_ID").eq(shelfId));
     Result shelfBookResult = persistenceService.run(shelfBookQuery);
     long currentBookAmount = (long) shelfBookResult.single().get("total");
 
+    System.out.println(">>> currentBookAmount: " + currentBookAmount);
+
     // Getting the capacity of the shelf
-    CqnSelect shelfQuery =
-        Select.from(ShelfService_.SHELVES).where(o -> o.get("ID").eq(shelfBook.getShelfId()));
+    CqnSelect shelfQuery = Select.from(ShelfService_.SHELVES).where(o -> o.get("ID").eq(shelfId));
     Result shelfResult = persistenceService.run(shelfQuery);
     if (shelfResult.first().isEmpty()) {
       // This means that we are in a deep insert scenario where the shelf is being created at the
       // same time as the book assignment
       // so the capacity validation is handled by the parent
+      System.out.println(
+          ">>> shelf result is empty, assuming deep insert scenario, skipping capacity validation");
       return;
     }
     // shelf Found -> this is not a deep insert, rather a POST /Shelves(ID)/bookAssignments
@@ -163,7 +171,6 @@ public class ShelfServiceHandler implements EventHandler {
     int maximumBookAmount = shelf.getCapacity();
 
     System.out.println(">>> maximumBookAmount: " + maximumBookAmount);
-    System.out.println(">>> maximumBookAmount: " + currentBookAmount);
 
     // This works because each bookAssignment counts for 1 book
     if (maximumBookAmount < currentBookAmount + 1) {
@@ -173,6 +180,8 @@ public class ShelfServiceHandler implements EventHandler {
               + maximumBookAmount
               + " would be exceeded.");
     }
+    System.out.println(
+        "Successfully passed capacity validation, allowing book to be added to shelf.");
   }
 
   @On(event = AddBookToShelfContext.CDS_NAME)
