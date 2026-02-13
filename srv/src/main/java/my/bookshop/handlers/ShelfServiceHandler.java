@@ -65,6 +65,23 @@ public class ShelfServiceHandler implements EventHandler {
     } else if (shelf.getCapacity() < 0) {
       throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf capacity cannot be negative.");
     }
+    // handle capacity update case: if capacity is updated, ensure that the new capacity is not less
+    // than the number of books currently assigned to the shelf
+    System.out.println("Shelf Id from Shelves object: " + shelf.getId());
+    if (shelf.getCapacity() != null && shelf.getId() != null) {
+      CqnSelect shelfBookQuery =
+          Select.from(ShelfService_.SHELF_BOOKS)
+              .columns(CQL.count().as("total"))
+              .where(sb -> sb.get("shelf_ID").eq(shelf.getId()));
+      Result shelfBookResult = persistenceService.run(shelfBookQuery);
+      long currentBookAmount = (long) shelfBookResult.single().get("total");
+      if (shelf.getCapacity() < currentBookAmount) {
+        throw new ServiceException(
+            ErrorStatuses.BAD_REQUEST,
+            "Shelf capacity cannot be less than the number of books currently assigned to the shelf. Current book amount: "
+                + currentBookAmount);
+      }
+    }
 
     // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not
     // exceeded
