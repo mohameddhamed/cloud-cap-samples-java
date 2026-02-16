@@ -5,9 +5,8 @@ import com.sap.cds.Result;
 import com.sap.cds.ql.CQL;
 import com.sap.cds.ql.Insert;
 import com.sap.cds.ql.Select;
-import com.sap.cds.ql.cqn.CqnComparisonPredicate;
-import com.sap.cds.ql.cqn.CqnInsert;
-import com.sap.cds.ql.cqn.CqnSelect;
+import com.sap.cds.ql.cqn.*;
+import com.sap.cds.reflect.CdsModel;
 import com.sap.cds.services.ErrorStatuses;
 import com.sap.cds.services.ServiceException;
 import com.sap.cds.services.cds.CdsCreateEventContext;
@@ -148,32 +147,76 @@ public class ShelfServiceHandler implements EventHandler {
   @Before(event = CqnService.EVENT_CREATE, entity = ShelfBooks_.CDS_NAME)
   public void beforeCreateShelfBook(ShelfBooks shelfBook, CdsCreateEventContext context) {
 
-    System.out.println(">>> beforeCreateShelfBook FIRED");
-    System.out.println(">>> entries: " + context.getCqn().entries());
+    //    System.out.println("################################################################");
+    //    System.out.println("################ TESTING ################");
+    //    System.out.println("################################################################");
+    //
+    //    CdsModel cdsModel = context.getModel();
+    //    CqnAnalyzer cqnAnalyzer = CqnAnalyzer.create(cdsModel);
+    //    CqnStatement cqn = context.getCqn();
+    //    AnalysisResult result = cqnAnalyzer.analyze(cqn.ref());
+    //
+    //    System.out.println(">>> rootKeys: " + result.rootKeys());
+    //    System.out.println(">>> rootEntity: " + result.rootEntity());
+    //    System.out.println(">>> targetEntity: " + result.targetEntity());
+    //    System.out.println(">>> targetKeys: " + result.targetKeys());
+    //    System.out.println(">>> targetValues: " + result.targetValues());
+    //
+    //    String shelfIdtest = (String) result.rootKeys().get("ID");
+    //
+    //    if (shelfIdtest == null || shelfIdtest.isEmpty()) {
+    //      shelfIdtest = context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID).toString();
+    //      System.out.println(">>> shelfId from entries fallback: " + shelfIdtest);
+    //    }
+    //
+    //    System.out.println(">>> bookId: " + shelfBook.getBookId());
+    //    System.out.println(">>> final shelfId: " + shelfIdtest);
+    //
+    //    System.out.println("################################################################");
+    //    System.out.println("################ BACK TO BASICS ################");
+    //    System.out.println("################################################################");
+    //
+    //    System.out.println(">>> beforeCreateShelfBook FIRED");
+    //    System.out.println(">>> entries: " + context.getCqn().entries());
+    //
+    //    var segments = context.getCqn().ref().segments();
+    //    var filter = segments.isEmpty() ? null : segments.get(0).filter().orElse(null);
+    //
+    //    System.out.println(">>> segments: " + (segments.isEmpty() ? "empty" : segments.get(0)));
+    //    System.out.println(">>> filter: " + filter);
+    //    System.out.println(
+    //        ">>> filter class: " + (filter != null ? filter.getClass().getName() : "null"));
+    //
+    //    String tempShelfId = null;
+    //
+    //    if (filter instanceof CqnComparisonPredicate comparison) {
+    //      tempShelfId = comparison.right().asLiteral().value().toString();
+    //      System.out.println(">>> shelfId from filter (/bookAssignment): " + tempShelfId);
+    //    }
+    //
+    //    if (tempShelfId == null || tempShelfId.isEmpty()) {
+    //      tempShelfId = context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID).toString();
+    //      System.out.println(">>> shelfId from action: " + tempShelfId);
+    //    }
+    //
+    //    final String shelfId = tempShelfId;
+    //    System.out.println(">>> bookId: " + shelfBook.getBookId());
+    //    System.out.println(">>> final shelfId: " + shelfId);
 
-    var segments = context.getCqn().ref().segments();
-    var filter = segments.isEmpty() ? null : segments.get(0).filter().orElse(null);
+    CdsModel cdsModel = context.getModel();
+    CqnAnalyzer cqnAnalyzer = CqnAnalyzer.create(cdsModel);
+    CqnStatement cqn = context.getCqn();
+    AnalysisResult result = cqnAnalyzer.analyze(cqn.ref());
 
-    System.out.println(">>> segments: " + (segments.isEmpty() ? "empty" : segments.get(0)));
-    System.out.println(">>> filter: " + filter);
-    System.out.println(
-        ">>> filter class: " + (filter != null ? filter.getClass().getName() : "null"));
-
-    String tempShelfId = null;
-
-    if (filter instanceof CqnComparisonPredicate comparison) {
-      tempShelfId = comparison.right().asLiteral().value().toString();
-      System.out.println(">>> shelfId from filter (/bookAssignment): " + tempShelfId);
-    }
+    String tempShelfId = (String) result.rootKeys().get("ID");
 
     if (tempShelfId == null || tempShelfId.isEmpty()) {
       tempShelfId = context.getCqn().entries().get(0).get(ShelfBooks_.SHELF_ID).toString();
-      System.out.println(">>> shelfId from action: " + tempShelfId);
     }
-
     final String shelfId = tempShelfId;
-    System.out.println(">>> bookId: " + shelfBook.getBookId());
-    System.out.println(">>> final shelfId: " + shelfId);
+
+    //    System.out.println(">>> bookId: " + shelfBook.getBookId());
+    //    System.out.println(">>> final shelfId: " + shelfId);
 
     // Checking if book even exists
     CqnSelect bookQuery =
