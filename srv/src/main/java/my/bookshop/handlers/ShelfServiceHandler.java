@@ -11,6 +11,7 @@ import com.sap.cds.ql.cqn.CqnSelect;
 import com.sap.cds.services.ErrorStatuses;
 import com.sap.cds.services.ServiceException;
 import com.sap.cds.services.cds.CdsCreateEventContext;
+import com.sap.cds.services.cds.CdsUpdateEventContext;
 import com.sap.cds.services.cds.CqnService;
 import com.sap.cds.services.handler.EventHandler;
 import com.sap.cds.services.handler.annotations.Before;
@@ -39,10 +40,70 @@ public class ShelfServiceHandler implements EventHandler {
   //  @Autowired
   //  ServiceCatalog serviceCatalog;
   //  private CqnService shelfService;
+  @Before(event = CqnService.EVENT_UPDATE, entity = Shelves_.CDS_NAME)
+  public void beforeUpdateShelf(Shelves shelf, CdsUpdateEventContext context) {
 
-  @Before(
-      event = {CqnService.EVENT_CREATE, CqnService.EVENT_UPDATE},
-      entity = Shelves_.CDS_NAME)
+    String shelfId = shelf.getId();
+    if (shelfId != null) {
+      CqnSelect query = Select.from(ShelfService_.SHELVES).where(o -> o.get("ID").eq(shelfId));
+
+      Result result = persistenceService.run(query);
+
+      if (result.first().isEmpty()) {
+        throw new ServiceException(
+            ErrorStatuses.NOT_FOUND, "Shelf with ID " + shelfId + " does not exist.");
+      }
+    }
+    //    1.	Name is mandatory
+    //    2.	Capacity is also mandatory, default should be 10 and cannot be negative.
+    if (shelf.getCapacity() == null && shelf.getName() == null) {
+      throw new ServiceException(
+          ErrorStatuses.BAD_REQUEST,
+          "You must provide at least one of the following properties to update a shelf: name, capacity.");
+    }
+
+    if (shelf.getName() != null) {
+      // We are in the case where only the name is being updated, we need to check if the new name
+      // already exists to prevent duplicates
+      CqnSelect query =
+          Select.from(ShelfService_.SHELVES).where(o -> o.get("name").eq(shelf.getName()));
+
+      Result result = persistenceService.run(query);
+
+      if (result.first().isPresent()) {
+        throw new ServiceException(
+            ErrorStatuses.CONFLICT, "Shelf with name " + shelf.getName() + " already exists.");
+      }
+    }
+    // handle capacity update case: if capacity is updated, ensure that the new capacity is not less
+    // than the number of books currently assigned to the shelf
+    System.out.println("Shelf Id from Shelves object: " + shelf.getId());
+    if (shelf.getCapacity() != null) {
+      CqnSelect shelfBookQuery =
+          Select.from(ShelfService_.SHELF_BOOKS)
+              .columns(CQL.count().as("total"))
+              .where(sb -> sb.get("shelf_ID").eq(shelfId));
+      Result shelfBookResult = persistenceService.run(shelfBookQuery);
+      long currentBookAmount = (long) shelfBookResult.single().get("total");
+      if (shelf.getCapacity() < currentBookAmount) {
+        throw new ServiceException(
+            ErrorStatuses.BAD_REQUEST,
+            "Shelf capacity cannot be less than the number of books currently assigned to the shelf. Current book amount: "
+                + currentBookAmount);
+      }
+    }
+
+    // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not
+    // exceeded
+    List<ShelfBooks> bookAssignments = shelf.getBookAssignments();
+    if (bookAssignments != null && bookAssignments.size() > shelf.getCapacity()) {
+      throw new ServiceException(
+          ErrorStatuses.BAD_REQUEST,
+          "Number of books assigned to the shelf cannot exceed its capacity.");
+    }
+  }
+
+  @Before(event = CqnService.EVENT_CREATE, entity = Shelves_.CDS_NAME)
   public void beforeCreateShelf(Shelves shelf) {
     //    1.	Name is mandatory
     //    2.	Capacity is also mandatory, default should be 10 and cannot be negative.
@@ -64,23 +125,6 @@ public class ShelfServiceHandler implements EventHandler {
       shelf.setCapacity(10); // Set default capacity
     } else if (shelf.getCapacity() < 0) {
       throw new ServiceException(ErrorStatuses.BAD_REQUEST, "Shelf capacity cannot be negative.");
-    }
-    // handle capacity update case: if capacity is updated, ensure that the new capacity is not less
-    // than the number of books currently assigned to the shelf
-    System.out.println("Shelf Id from Shelves object: " + shelf.getId());
-    if (shelf.getCapacity() != null && shelf.getId() != null) {
-      CqnSelect shelfBookQuery =
-          Select.from(ShelfService_.SHELF_BOOKS)
-              .columns(CQL.count().as("total"))
-              .where(sb -> sb.get("shelf_ID").eq(shelf.getId()));
-      Result shelfBookResult = persistenceService.run(shelfBookQuery);
-      long currentBookAmount = (long) shelfBookResult.single().get("total");
-      if (shelf.getCapacity() < currentBookAmount) {
-        throw new ServiceException(
-            ErrorStatuses.BAD_REQUEST,
-            "Shelf capacity cannot be less than the number of books currently assigned to the shelf. Current book amount: "
-                + currentBookAmount);
-      }
     }
 
     // handle deep insert case: if books are assigned during shelf creation, ensure capacity is not
